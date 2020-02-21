@@ -15,6 +15,8 @@ You can see the usage as follows:
 Which produces output like this:
 
     usage: kmercount [options] < readsfile
+      -all int
+            count all kmers of given size (default = 0, only count kmers in -kmers file)
       -fasta string
             Accept input from this fasta file
       -kmers string
@@ -50,3 +52,22 @@ We get an extra count of "AAA" that spands the line break:
     stat    queries 2
     stat    comparisons     17
     stat    sum     8
+
+It's also possible to count all kmers of a certain size using the `-all` parameter:
+
+    (echo "AABCAAABCAA"; echo "ABCAAAAA") | kmercount -all 3
+
+For which we observe the following output:
+
+    kmer    AAB     2
+    kmer    ABC     3
+    kmer    BCA     3
+    kmer    CAA     3
+    kmer    AAA     4
+    stat    queries 5
+    stat    comparisons     15
+    stat    sum     15
+
+
+
+

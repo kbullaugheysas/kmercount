@@ -14,6 +14,7 @@ import (
 type Args struct {
 	Limit  int
 	Kmers  string
+	All    int
 	Fasta  string
 	Size   int
 	Unroll bool
@@ -26,6 +27,7 @@ var totalCount = 0
 func init() {
 	log.SetFlags(0)
 	flag.StringVar(&args.Kmers, "kmers", "", "file listing kmers to look for")
+	flag.IntVar(&args.All, "all", 0, "count all kmers of given size (default = 0, only count kmers in -kmers file)")
 	flag.IntVar(&args.Limit, "limit", 0, "limit the number of lines of stdin to consider (default = 0 = unlimited)")
 	flag.StringVar(&args.Fasta, "fasta", "", "Accept input from this fasta file")
 	flag.BoolVar(&args.Unroll, "unroll", false, "Treat lines as one long contiguous sequence")
@@ -39,40 +41,48 @@ func init() {
 func main() {
 	flag.Parse()
 
-	if args.Kmers == "" {
-		log.Println("Missing -kmers parameter")
+	if args.Kmers == "" && args.All == 0 {
+		log.Println("Must supply -kmers argument or -all argument")
+		flag.Usage()
+		os.Exit(1)
+	}
+	if args.Kmers != "" && args.All > 0 {
+		log.Println("can't supply both -kmers and -all arguments")
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	kmers := make(map[string]int)
 	kmerSize := 0
-
-	fp, err := os.Open(args.Kmers)
-	if err != nil {
-		log.Fatal("Failed to open kmers file")
+	if args.All > 0 {
+		kmerSize = args.All
+	} else {
+		fp, err := os.Open(args.Kmers)
+		if err != nil {
+			log.Fatal("Failed to open kmers file")
+		}
+		kmerScan := bufio.NewScanner(fp)
+		for kmerScan.Scan() {
+			kmer := kmerScan.Text()
+			if len(kmer) == 0 {
+				log.Fatal("Empty line in kmers file")
+			}
+			if kmerSize == 0 {
+				kmerSize = len(kmer)
+			}
+			if len(kmer) != kmerSize {
+				log.Fatalf("Expecting kmer to be length %d but %s is length %d\n", kmerSize, kmer, len(kmer))
+			}
+			kmers[kmer] = 0
+		}
+		fp.Close()
 	}
-	kmerScan := bufio.NewScanner(fp)
-	for kmerScan.Scan() {
-		kmer := kmerScan.Text()
-		if len(kmer) == 0 {
-			log.Fatal("Empty line in kmers file")
-		}
-		if kmerSize == 0 {
-			kmerSize = len(kmer)
-		}
-		if len(kmer) != kmerSize {
-			log.Fatalf("Expecting kmer to be length %d but %s is length %d\n", kmerSize, kmer, len(kmer))
-		}
-		kmers[kmer] = 0
-	}
-	fp.Close()
 
 	lineNum := 0
 	b := ""
 	offset := 0
 	if args.Fasta != "" {
-		fp, err = os.Open(args.Fasta)
+		fp, err := os.Open(args.Fasta)
 		if err != nil {
 			log.Fatalf("Failed to open fasta file %s: %v", args.Fasta, err)
 		}
@@ -84,6 +94,7 @@ func main() {
 			line := fastaScan.Text()
 			if strings.HasPrefix(line, ">") {
 				// Skip fasta header lines, but reset the buffer
+				log.Println(line)
 				b = ""
 				offset = 0
 				continue
@@ -128,6 +139,10 @@ func countKmers(buf string, k int, kmers map[string]int) int {
 		_, present := kmers[kmer]
 		if present {
 			kmers[kmer] += 1
+		} else {
+			if args.All > 0 {
+				kmers[kmer] = 1
+			}
 		}
 		offset++
 		totalCount++
