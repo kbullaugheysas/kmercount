@@ -15,7 +15,38 @@ You can see the usage as follows:
 Which produces output like this:
 
     usage: kmercount [options] < readsfile
+      -fasta string
+            Accept input from this fasta file
       -kmers string
-        	file listing kmers to look for
+            file listing kmers to look for
       -limit int
-        	limit the number of lines of stdin to consider (default = 0 = unlimited)
+            limit the number of lines of stdin to consider (default = 0 = unlimited)
+      -unroll
+            Treat lines as one long contiguous sequence
+
+### Examples
+
+The program can take a list of sequences on stdin. By default each line is
+treated separately and kmers can't span line breaks:
+
+    (echo "AABCAAABCAA"; echo "ABCAAAAA") | kmercount -kmers <(echo "ABC"; echo "AAA")
+
+The program produces tabular output, and for the above command we'd get this:
+
+    kmer    ABC     3
+    kmer    AAA     4
+    stat    queries 2
+    stat    comparisons     15
+    stat    sum     7
+
+But if we add the -unroll parameter with the same inputs as above, like this:
+
+    (echo "AABCAAABCAA"; echo "ABCAAAAA") | kmercount -kmers <(echo "ABC"; echo "AAA") -unroll
+
+We get an extra count of "AAA" that spands the line break:
+
+    kmer    ABC     3
+    kmer    AAA     5
+    stat    queries 2
+    stat    comparisons     17
+    stat    sum     8

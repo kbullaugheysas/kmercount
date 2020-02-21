@@ -12,17 +12,23 @@ import (
 )
 
 type Args struct {
-	Limit int
-	Kmers string
-	Size  int
+	Limit  int
+	Kmers  string
+	Fasta  string
+	Size   int
+	Unroll bool
 }
 
 var args = Args{}
+
+var totalCount = 0
 
 func init() {
 	log.SetFlags(0)
 	flag.StringVar(&args.Kmers, "kmers", "", "file listing kmers to look for")
 	flag.IntVar(&args.Limit, "limit", 0, "limit the number of lines of stdin to consider (default = 0 = unlimited)")
+	flag.StringVar(&args.Fasta, "fasta", "", "Accept input from this fasta file")
+	flag.BoolVar(&args.Unroll, "unroll", false, "Treat lines as one long contiguous sequence")
 
 	flag.Usage = func() {
 		log.Println("usage: kmercount [options] < readsfile")
@@ -60,32 +66,71 @@ func main() {
 		}
 		kmers[kmer] = 0
 	}
+	fp.Close()
 
-	log.Println("Found", len(kmers), "kmers")
-
-	seqScan := bufio.NewScanner(os.Stdin)
 	lineNum := 0
 	b := ""
 	offset := 0
-	for seqScan.Scan() {
-		if args.Limit > 0 && lineNum > args.Limit {
-			break
+	if args.Fasta != "" {
+		fp, err = os.Open(args.Fasta)
+		if err != nil {
+			log.Fatalf("Failed to open fasta file %s: %v", args.Fasta, err)
 		}
-		b = b + strings.ToUpper(seqScan.Text())
-		lineNum++
-		for offset+kmerSize <= len(b) {
-			kmer := string(b[offset:(offset + kmerSize)])
-			_, present := kmers[kmer]
-			if present {
-				kmers[kmer] += 1
+		fastaScan := bufio.NewScanner(fp)
+		for fastaScan.Scan() {
+			if args.Limit > 0 && lineNum > args.Limit {
+				break
 			}
-			offset++
+			line := fastaScan.Text()
+			if strings.HasPrefix(line, ">") {
+				// Skip fasta header lines, but reset the buffer
+				b = ""
+				offset = 0
+				continue
+			}
+			b = b + strings.ToUpper(line)
+			lineNum++
+			offset = countKmers(b, kmerSize, kmers)
+			b = string(b[offset:len(b)])
 		}
-		b = string(b[offset:len(b)])
-		offset = 0
+	} else {
+		seqScan := bufio.NewScanner(os.Stdin)
+		for seqScan.Scan() {
+			if args.Limit > 0 && lineNum > args.Limit {
+				break
+			}
+			b = b + strings.ToUpper(seqScan.Text())
+			lineNum++
+			offset = countKmers(b, kmerSize, kmers)
+			if args.Unroll {
+				b = string(b[offset:len(b)])
+			} else {
+				offset = 0
+				b = ""
+			}
+		}
 	}
 
+	sum := 0
 	for kmer, count := range kmers {
-		fmt.Printf("%s\t%d\n", kmer, count)
+		fmt.Printf("kmer\t%s\t%d\n", kmer, count)
+		sum += count
 	}
+	fmt.Printf("stat\tqueries\t%d\n", len(kmers))
+	fmt.Printf("stat\tcomparisons\t%d\n", totalCount)
+	fmt.Printf("stat\tsum\t%d\n", sum)
+}
+
+func countKmers(buf string, k int, kmers map[string]int) int {
+	offset := 0
+	for offset+k <= len(buf) {
+		kmer := string(buf[offset:(offset + k)])
+		_, present := kmers[kmer]
+		if present {
+			kmers[kmer] += 1
+		}
+		offset++
+		totalCount++
+	}
+	return offset
 }
